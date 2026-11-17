@@ -1,0 +1,8 @@
+#!/bin/bash
+set -euo pipefail
+
+label="local.codex-usage-display"
+if launchctl list "$label" >/dev/null 2>&1; then
+  launchctl remove "$label"
+fi
+echo "Mac 用量服务已停止。"

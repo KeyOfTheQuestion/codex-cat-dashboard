@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0d1411">
+<title>Codex 用量看板</title>
+<style>
+  :root {
+    --background: #0d1411;
+    --surface: #15201a;
+    --line: #2b3930;
+    --text: #eef5df;
+    --muted: #a4b4a7;
+    --mint: #c5f485;
+    --teal: #9de1c6;
+    --warning: #ffc37e;
+    font-family: "Geist", "Noto Sans SC", "PingFang SC", sans-serif;
+    color: var(--text);
+    background: var(--background);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-width: 280px; }
+  main {
+    min-height: 100vh;
+    min-height: 100dvh;
+    max-width: 1080px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-rows: auto 1fr auto auto;
+    gap: clamp(8px, 2vh, 20px);
+    padding: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right))
+      max(16px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+  }
+  html:fullscreen main { transform: rotate(180deg); }
+  header, footer, .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  header { padding: 0 2px; }
+  h1, h2, p { margin: 0; }
+  h1 { font-size: clamp(18px, 5vw, 23px); font-weight: 700; letter-spacing: -0.025em; }
+  h2 { font-size: 14px; font-weight: 650; letter-spacing: .055em; }
+  .status, .meta, footer { color: var(--muted); font-size: 12px; line-height: 1.35; }
+  .status { display: flex; gap: 7px; align-items: center; text-align: right; white-space: nowrap; }
+  .status::before { content: ""; flex: 0 0 6px; height: 6px; border-radius: 50%; background: var(--teal); }
+  .status[data-stale="true"]::before { background: var(--warning); }
+  .metrics { display: grid; grid-template-rows: 1.2fr 1fr 1fr; gap: 10px; min-width: 0; }
+  .tile {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: clamp(8px, 1.7vh, 18px);
+    padding: clamp(12px, 2.7vh, 25px) clamp(14px, 4.5vw, 27px);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--surface);
+  }
+  .hero { background: #1a2b1b; border-color: #3c5133; }
+  .number {
+    font-family: "Geist", "Geist Mono", "Noto Sans", "Roboto", sans-serif;
+    font-variant-numeric: tabular-nums;
+    line-height: .94;
+    letter-spacing: -.07em;
+    font-weight: 750;
+  }
+  .total { color: var(--mint); font-size: clamp(31px, 10.1vw, 88px); }
+  .percent { font-size: clamp(40px, 12vw, 83px); }
+  .percent small { font-size: .48em; font-weight: 650; margin-left: .075em; color: var(--muted); }
+  .reset { align-self: end; margin-bottom: 1px; text-align: right; }
+  .reset time { display: block; color: var(--text); margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .track {
+    --remaining: 0%;
+    height: 6px;
+    border-radius: 3px;
+    overflow: hidden;
+    background: #334238;
+  }
+  .track::before {
+    content: "";
+    display: block;
+    border-radius: inherit;
+    height: 100%;
+    width: var(--remaining);
+    background: var(--teal);
+    transition: width .35s ease;
+  }
+  .track[data-low="true"]::before { background: var(--warning); }
+  footer { padding: 0 2px; }
+  button {
+    border: 1px solid #46564c;
+    border-radius: 6px;
+    padding: 6px 10px;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    min-height: 32px;
+  }
+  button:focus-visible { outline: 2px solid var(--mint); outline-offset: 2px; }
+  [hidden] { display: none !important; }
+  button { cursor: pointer; }
+  .reminder-strip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 7px 10px;
+    min-width: 0;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .reminder-strip[data-due="true"] {
+    background: #36291d;
+    color: #ffe1bd;
+    border-color: #a7713f;
+  }
+  .reminder-strip p { min-width: 0; overflow-wrap: anywhere; }
+  .reminder-strip[data-due="true"] p { font-weight: 700; }
+  .reminder-actions { flex: none; display: flex; gap: 6px; }
+  #reminder-confirm { border-color: transparent; background: var(--warning); color: #2b190b; font-weight: 700; }
+  dialog {
+    width: min(720px, calc(100% - 28px));
+    max-height: 92vh;
+    max-height: 92dvh;
+    padding: 14px;
+    border: 1px solid #46564c;
+    border-radius: 14px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 13px;
+  }
+  html:fullscreen dialog { transform: rotate(180deg); }
+  dialog::backdrop { background: rgba(5, 9, 7, .78); }
+  .reminder-settings-grid { display: grid; gap: 10px; margin-top: 10px; }
+  .reminder-form { min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 9px; }
+  .reminder-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 8px 0; }
+  .reminder-fields label { display: grid; gap: 3px; min-width: 0; color: var(--muted); }
+  .reminder-fields input, .reminder-fields select {
+    width: 100%;
+    min-width: 0;
+    min-height: 30px;
+    padding: 4px;
+    background: var(--background);
+    color: var(--text);
+    border: 1px solid #46564c;
+    border-radius: 4px;
+    font: inherit;
+  }
+  .reminder-fields .wide { grid-column: 1 / -1; }
+  .reminder-check { white-space: nowrap; display: flex; align-items: center; }
+  .reminder-check input { accent-color: var(--mint); }
+  .reminder-feedback { color: var(--warning); }
+  .reminder-form-actions { justify-content: flex-start; }
+  .reminder-task-list { list-style: none; padding: 0; margin: 0; }
+  .reminder-task-list li {
+    padding: 6px 0;
+    border-top: 1px solid var(--line);
+    overflow-wrap: anywhere;
+  }
+  .reminder-task-list button { flex: none; }
+  .reminder-list-title { margin: 10px 0 6px; }
+  @media (min-width: 640px) {
+    .reminder-settings-grid { grid-template-columns: 1fr 1.12fr; }
+    #task-form .wide { grid-column: auto; }
+  }
+  @media (min-width: 700px) {
+    .metrics { grid-template-columns: 1fr 1fr; grid-template-rows: 1.05fr 1fr; }
+    .hero { grid-column: 1 / -1; }
+    .hero .total { font-size: clamp(38px, 11vh, 80px); }
+    .percent { font-size: clamp(32px, 10vh, 70px); }
+  }
+  @media (max-height: 450px) and (min-width: 640px) {
+    .metrics { grid-template-rows: 1fr; grid-template-columns: 1.2fr 1fr 1fr; }
+    .hero { grid-column: auto; }
+    .hero .total, .percent { font-size: clamp(30px, 5.6vw, 56px); }
+    .tile { padding-inline: 12px; }
+    .quota .row:nth-child(2) { flex-wrap: wrap; }
+  }
+  @media (prefers-reduced-motion: reduce) { .track::before { transition: none; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Codex 用量</h1>
+    <div class="status" id="status" role="status" data-stale="true">连接中</div>
+  </header>
+  <div class="metrics">
+    <section class="tile hero">
+      <div class="row">
+        <h2>今日 token</h2>
+        <time class="meta" id="day"></time>
+      </div>
+      <p class="number total" id="tokens">—</p>
+      <p class="meta">本机 Codex · 北京时间</p>
+    </section>
+    <section class="tile quota">
+      <h2>5 小时剩余</h2>
+      <div class="row">
+        <p class="number percent"><span id="fiveHours">—</span><small aria-hidden="true">%</small></p>
+        <p class="meta reset">重置<time id="fiveHours-reset">—</time></p>
+      </div>
+      <div class="track" id="fiveHours-track" aria-hidden="true"></div>
+    </section>
+    <section class="tile quota">
+      <h2>每周剩余</h2>
+      <div class="row">
+        <p class="number percent"><span id="weekly">—</span><small aria-hidden="true">%</small></p>
+        <p class="meta reset">重置<time id="weekly-reset">—</time></p>
+      </div>
+      <div class="track" id="weekly-track" aria-hidden="true"></div>
+    </section>
+  </div>
+  <section class="reminder-strip" id="reminder-strip" aria-label="桌面提醒">
+    <p id="reminder-caption" role="status">正在读取提醒</p>
+    <div class="reminder-actions">
+      <button id="reminder-confirm" type="button" hidden>确认</button>
+      <button id="reminder-open" type="button">提醒设置</button>
+    </div>
+  </section>
+  <footer>
+    <span id="freshness">正在读取用量</span>
+    <button id="fullscreen" type="button">全屏常亮</button>
+  </footer>
+</main>
+<dialog id="reminder-settings" aria-labelledby="reminder-heading">
+  <div class="row">
+    <div>
+      <h2 id="reminder-heading">提醒设置</h2>
+      <p class="meta">北京时间 · 仅在看板上显示</p>
+    </div>
+    <button id="reminder-close" type="button" autofocus>关闭</button>
+  </div>
+  <p id="reminder-storage-error" class="reminder-feedback" role="status" hidden>浏览器存储不可用，关闭或刷新页面后将丢失此设置。</p>
+  <div class="reminder-settings-grid">
+    <form id="water-form" class="reminder-form">
+      <div class="row">
+        <h2>喝水</h2>
+        <label class="reminder-check"><input type="checkbox" id="water-enabled"> 启用</label>
+      </div>
+      <div class="reminder-fields">
+        <label>开始 <input type="time" id="water-start" required></label>
+        <label>结束 <input type="time" id="water-end" required></label>
+        <label>间隔（分钟） <input type="number" id="water-interval" min="1" max="1440" required></label>
+      </div>
+      <div class="row reminder-form-actions">
+        <button type="submit">保存喝水设置</button>
+        <p id="water-feedback" class="reminder-feedback" role="status"></p>
+      </div>
+    </form>
+    <form id="task-form" class="reminder-form">
+      <h2>定时待办</h2>
+      <div class="reminder-fields">
+        <label class="wide">名称 <input id="task-title" type="text" maxlength="60" required></label>
+        <label>频率 <select id="task-repeat"><option value="once">单次</option><option value="daily">每天</option></select></label>
+        <label>时间 <input id="task-time" type="time" required></label>
+        <label id="task-date-field" class="wide">日期 <input id="task-date" type="date" required></label>
+      </div>
+      <div class="row reminder-form-actions">
+        <button type="submit">添加待办</button>
+        <p id="task-feedback" class="reminder-feedback" role="status"></p>
+      </div>
+    </form>
+  </div>
+  <h2 class="reminder-list-title">已安排的待办</h2>
+  <p id="reminder-no-tasks" class="meta">暂无待办</p>
+  <ul id="reminder-task-list" class="reminder-task-list"></ul>
+</dialog>
+<script>
+  const el = id => document.getElementById(id);
+  const number = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 1 });
+  const beijingDate = new Intl.DateTimeFormat('en-CA', {
+    year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Asia/Shanghai',
+  });
+  const resetTime = new Intl.DateTimeFormat('zh-CN', {
+    month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
+    hourCycle: 'h23', timeZone: 'Asia/Shanghai',
+  });
+  const updateTime = new Intl.DateTimeFormat('zh-CN', {
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hourCycle: 'h23', timeZone: 'Asia/Shanghai',
+  });
+  let snapshot;
+  let wakeLock;
+  let keepAwake = false;
+
+  function render(data, offline = false) {
+    const today = beijingDate.format();
+    const tokens = data?.tokenUsage;
+    const quota = data?.quota;
+    el('day').textContent = today;
+    el('tokens').textContent = tokens?.day === today ? number.format(tokens.tokens) : '—';
+    for (const key of ['fiveHours', 'weekly']) {
+      const window = quota?.[key];
+      el(key).textContent = window ? number.format(window.remaining) : '—';
+      el(key).setAttribute('aria-label', window ? `${window.remaining}%` : '暂无数据');
+      el(`${key}-reset`).textContent = window?.resetsAt ? resetTime.format(window.resetsAt) : '—';
+      el(`${key}-track`).style.setProperty('--remaining', `${window?.remaining ?? 0}%`);
+      el(`${key}-track`).dataset.low = Boolean(window && window.remaining <= 20);
+    }
+
+    let status = '实时更新';
+    if (offline) {
+      status = '连接中断 · 自动重试';
+    } else if (data?.quotaError || data?.tokenError) {
+      const labels = [data.quotaError && '额度', data.tokenError && 'token'].filter(Boolean);
+      status = `${labels.join('和')}更新失败`;
+    } else if (!quota || !tokens) {
+      status = '正在读取';
+    } else if (!quota.fiveHours || !quota.weekly) {
+      status = '部分额度暂无数据';
+    }
+    el('status').textContent = status;
+    el('status').dataset.stale = status !== '实时更新';
+    const timestamps = [
+      tokens?.updatedAt && `token ${updateTime.format(tokens.updatedAt)}`,
+      quota?.updatedAt && `额度 ${updateTime.format(quota.updatedAt)}`,
+    ].filter(Boolean);
+    el('freshness').textContent = timestamps.join(' · ') || '正在读取用量';
+  }
+
+  async function update() {
+    try {
+      const response = await fetch('/api/usage', { cache: 'no-store', signal: AbortSignal.timeout(4000) });
+      if (!response.ok) {
+        throw new Error('读取失败');
+      }
+      snapshot = await response.json();
+      render(snapshot);
+    } catch {
+      render(snapshot, true);
+    }
+    setTimeout(update, 5000);
+  }
+
+  async function requestWakeLock() {
+    if (keepAwake && !wakeLock && 'wakeLock' in navigator && document.visibilityState === 'visible') {
+      try {
+        wakeLock = await navigator.wakeLock.request('screen');
+        wakeLock.addEventListener('release', () => { wakeLock = undefined; });
+      } catch {
+        wakeLock = undefined;
+      }
+    }
+  }
+
+  const button = el('fullscreen');
+  button.hidden = !document.fullscreenEnabled && !('wakeLock' in navigator);
+  button.textContent = 'wakeLock' in navigator ? '全屏常亮' : '全屏';
+  if (!document.fullscreenEnabled) {
+    button.textContent = '常亮';
+  }
+
+  button.addEventListener('click', async () => {
+    if (keepAwake || document.fullscreenElement) {
+      keepAwake = false;
+      await wakeLock?.release();
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      }
+      button.textContent = document.fullscreenEnabled
+        ? ('wakeLock' in navigator ? '全屏常亮' : '全屏') : '常亮';
+      return;
+    }
+    const fullscreen = document.fullscreenEnabled ? document.documentElement.requestFullscreen().catch(() => {}) : null;
+    keepAwake = true;
+    await requestWakeLock();
+    await fullscreen;
+    button.textContent = '退出';
+  });
+  document.addEventListener('visibilitychange', requestWakeLock);
+  document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement && document.fullscreenEnabled) {
+      keepAwake = false;
+      void wakeLock?.release();
+      button.textContent = 'wakeLock' in navigator ? '全屏常亮' : '全屏';
+    }
+  });
+  render();
+  void update();
+</script>
+<script type="module" src="/reminders.mjs"></script>
+</body>
+</html>

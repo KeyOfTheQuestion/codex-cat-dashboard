@@ -1,0 +1,15 @@
+.DS_Store
+.idea/
+.gradle/
+build/
+node_modules/
+*.apk
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+*.log
+*.jsonl
+.env
+.env.*

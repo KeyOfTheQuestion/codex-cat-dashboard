@@ -1,0 +1,13 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="local.codex.display" android:versionCode="11" android:versionName="1.10.0">
+    <uses-sdk android:minSdkVersion="30" android:targetSdkVersion="34"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <application android:label="橘猫看板" android:icon="@drawable/cat_icon" android:theme="@android:style/Theme.Material.NoActionBar"
+        android:networkSecurityConfig="@xml/network_security" android:allowBackup="false">
+        <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="reverseLandscape">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
