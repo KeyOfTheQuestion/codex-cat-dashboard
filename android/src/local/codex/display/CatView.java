@@ -4,6 +4,8 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
+import android.graphics.ColorFilter;
+import android.graphics.ColorMatrixColorFilter;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
@@ -14,10 +16,12 @@ import java.util.concurrent.ThreadLocalRandom;
 
 final class CatView extends View {
     private static final long CHEER_TIME = 1_450;
+    private static final long BLINK_INTERVAL = 6_000;
     private static final long MIN_IDLE_GAP = 45_000;
     private static final long MAX_IDLE_GAP = 75_000;
 
     private final Bitmap cheer;
+    private final ColorFilter cheerColor;
     private final Sequence drinking;
     private final Sequence stretching;
     private final Sequence waving;
@@ -30,6 +34,8 @@ final class CatView extends View {
     private long reminderStartedAt;
     private long cheerStartedAt = -10_000;
     private long nextIdleAt;
+    private long nextBlinkAt;
+    private long blinkStartedAt = -BLINK_INTERVAL;
     private long idleStartedAt;
     private int playingIdle = -1;
     private int previousIdle = -1;
@@ -39,17 +45,17 @@ final class CatView extends View {
         Bitmap actions = BitmapFactory.decodeResource(getResources(), R.drawable.cat_actions);
         cheer = Bitmap.createBitmap(actions, actions.getWidth() / 2, actions.getHeight() / 2,
             actions.getWidth() / 2, actions.getHeight() / 2);
-        drinking = new Sequence(BitmapFactory.decodeResource(getResources(), R.drawable.cat_drink_frames),
-            new int[]{270, 254, 240, 271, 254, 240}, new int[]{487, 487, 487, 487, 487, 487},
+        cheerColor = spriteColor(R.drawable.cat_actions);
+        drinking = new Sequence(loadFrames(R.drawable.cat_drink_frames,
+            new int[]{270, 254, 240, 271, 254, 240}, new int[]{487, 487, 487, 487, 487, 487}, 3),
             540, 1_180, 660);
-        stretching = new Sequence(BitmapFactory.decodeResource(getResources(), R.drawable.cat_stretch_frames),
-            new int[]{255, 255, 255, 255, 255, 256}, new int[]{481, 481, 481, 480, 480, 480},
+        stretching = new Sequence(loadFrames(R.drawable.cat_stretch_frames,
+            new int[]{255, 255, 255, 255, 255, 256}, new int[]{481, 481, 481, 480, 480, 480}, 3),
             660, 1_230, 770);
-        Frame[] wavePoses = Frame.fromAtlas(BitmapFactory.decodeResource(getResources(), R.drawable.cat_wave_frames),
-            new int[]{257, 257, 258, 257, 257, 258}, new int[]{480, 480, 480, 480, 480, 479});
-        Frame[] waveInBetweens = Frame.fromAtlas(
-            BitmapFactory.decodeResource(getResources(), R.drawable.cat_wave_inbetweens),
-            new int[]{258, 257, 258, 257, 257}, new int[]{480, 480, 480, 480, 480});
+        Frame[] wavePoses = loadFrames(R.drawable.cat_wave_frames,
+            new int[]{257, 257, 258, 257, 257, 258}, new int[]{480, 480, 480, 480, 480, 479}, 3);
+        Frame[] waveInBetweens = loadFrames(R.drawable.cat_wave_inbetweens,
+            new int[]{258, 257, 258, 257, 257}, new int[]{480, 480, 480, 480, 480}, 3);
         Frame[] waveFrames = new Frame[wavePoses.length + waveInBetweens.length];
         for (int index = 0; index < waveInBetweens.length; index++) {
             waveFrames[index * 2] = wavePoses[index];
@@ -57,40 +63,37 @@ final class CatView extends View {
         }
         waveFrames[waveFrames.length - 1] = wavePoses[wavePoses.length - 1];
         waving = new Sequence(waveFrames, 690, 245, 630);
-        blinking = new Sequence(BitmapFactory.decodeResource(getResources(), R.drawable.cat_blink_frames),
-            new int[]{257, 257, 257, 257, 257, 257}, new int[]{480, 479, 479, 479, 479, 480},
+        blinking = new Sequence(loadFrames(R.drawable.cat_blink_frames,
+            new int[]{257, 257, 257, 257, 257, 257}, new int[]{480, 479, 479, 479, 479, 480}, 3),
             150, 110, 190);
-        Sequence yawning = new Sequence(BitmapFactory.decodeResource(getResources(), R.drawable.cat_yawn_frames),
-            new int[]{260, 260, 260, 260, 260, 260}, new int[]{483, 483, 483, 483, 483, 483},
+        Sequence yawning = new Sequence(loadFrames(R.drawable.cat_yawn_frames,
+            new int[]{260, 260, 260, 260, 260, 260}, new int[]{483, 483, 483, 483, 483, 483}, 3),
             680, 540, 690);
-        Sequence flashing = new Sequence(Frame.fromAtlas(
-            BitmapFactory.decodeResource(getResources(), R.drawable.cat_flash_frames), 4,
+        Sequence flashing = new Sequence(loadFrames(R.drawable.cat_flash_frames,
             new int[]{221, 213, 196, 217, 233, 224, 221, 223},
-            new int[]{417, 417, 418, 417, 417, 418, 418, 417}),
+            new int[]{417, 417, 418, 417, 417, 418, 418, 417}, 4),
             new int[]{130, 270, 365, 545, 660, 860, 1_035, 1_260},
             new float[]{0, -12, 22, 66, 32, -51, -17, 0});
         // Use the standing floor for all frames so the preparation hop retains its height.
-        Sequence kicking = new Sequence(Frame.fromAtlas(
-            BitmapFactory.decodeResource(getResources(), R.drawable.cat_kick_frames), 4,
+        Sequence kicking = new Sequence(loadFrames(R.drawable.cat_kick_frames,
             new int[]{225, 222, 221, 216, 219, 222, 225, 227},
-            new int[]{408, 408, 408, 408, 408, 408, 408, 408}),
+            new int[]{408, 408, 408, 408, 408, 408, 408, 408}, 4),
             new int[]{140, 315, 465, 605, 790, 935, 1_100, 1_360}, null);
-        Frame[] shake = Frame.fromAtlas(BitmapFactory.decodeResource(getResources(), R.drawable.cat_shake_frames),
-            4, new int[]{224, 224, 223, 225, 224, 226, 226, 226},
-            new int[]{419, 416, 416, 416, 417, 419, 420, 419});
+        Frame[] shake = loadFrames(R.drawable.cat_shake_frames,
+            new int[]{224, 224, 223, 225, 224, 226, 226, 226},
+            new int[]{419, 416, 416, 416, 417, 419, 420, 419}, 4);
         Sequence shaking = new Sequence(
             new Frame[]{shake[0], shake[1], shake[2], shake[3], shake[4], shake[5],
                 shake[2], shake[3], shake[4], shake[5], shake[6], shake[7]},
             new int[]{150, 335, 445, 560, 670, 780, 895, 1_010, 1_130, 1_250, 1_460, 1_720}, null);
-        idleActions = new Sequence[]{waving, blinking, yawning, flashing, kicking, shaking};
+        idleActions = new Sequence[]{waving, yawning, flashing, kicking, shaking};
         scheduleIdle(SystemClock.uptimeMillis());
         setContentDescription("戴头盔的橘猫，轻触互动");
         setOnClickListener(view -> {
             if (reminder == null) {
                 celebrate();
             } else {
-                reminderStartedAt = SystemClock.uptimeMillis();
-                invalidate();
+                startReminder(SystemClock.uptimeMillis());
             }
         });
     }
@@ -98,17 +101,36 @@ final class CatView extends View {
     void setReminder(ReminderPlan.Kind kind, boolean newReminder) {
         if (reminder != kind || newReminder) {
             reminder = kind;
-            reminderStartedAt = SystemClock.uptimeMillis();
-            scheduleIdle(reminderStartedAt);
-            invalidate();
+            startReminder(SystemClock.uptimeMillis());
         }
     }
 
     void celebrate() {
         cheerStartedAt = SystemClock.uptimeMillis();
-        reminderStartedAt = cheerStartedAt + CHEER_TIME;
-        scheduleIdle(reminderStartedAt);
+        startReminder(cheerStartedAt + CHEER_TIME);
+    }
+
+    private void startReminder(long start) {
+        reminderStartedAt = start;
+        Sequence sequence = reminderSequence();
+        scheduleIdle(sequence == null ? start : start + sequence.duration());
         invalidate();
+    }
+
+    private Sequence reminderSequence() {
+        if (reminder == null) {
+            return null;
+        }
+        switch (reminder) {
+            case WATER:
+                return drinking;
+            case STRETCH:
+                return stretching;
+            case TASK:
+                return waving;
+            default:
+                return null;
+        }
     }
 
     @Override
@@ -132,15 +154,14 @@ final class CatView extends View {
             center + shadow, ground + size * 0.024f, accentPaint);
         destination.set(center - size / 2, top + offset, center + size / 2, top + offset + size);
 
+        Sequence reminderAnimation = reminderSequence();
         boolean moving = celebrating;
         if (celebrating) {
+            spritePaint.setColorFilter(cheerColor);
             canvas.drawBitmap(cheer, null, destination, spritePaint);
             drawStars(canvas, center, top, size, hop);
-        } else if (reminder == ReminderPlan.Kind.WATER || reminder == ReminderPlan.Kind.STRETCH) {
-            Sequence sequence = reminder == ReminderPlan.Kind.WATER ? drinking : stretching;
-            moving = sequence.draw(canvas, destination, spritePaint, sinceReminder);
-        } else if (reminder == ReminderPlan.Kind.TASK) {
-            moving = waving.draw(canvas, destination, spritePaint, sinceReminder);
+        } else if (reminderAnimation != null && sinceReminder < reminderAnimation.duration()) {
+            moving = reminderAnimation.draw(canvas, destination, spritePaint, sinceReminder);
         } else {
             moving = drawIdle(canvas, now);
         }
@@ -156,6 +177,8 @@ final class CatView extends View {
 
     private void scheduleIdle(long after) {
         playingIdle = -1;
+        blinkStartedAt = -BLINK_INTERVAL;
+        nextBlinkAt = after + BLINK_INTERVAL;
         nextIdleAt = after + ThreadLocalRandom.current().nextLong(MIN_IDLE_GAP, MAX_IDLE_GAP + 1);
     }
 
@@ -163,7 +186,11 @@ final class CatView extends View {
         if (playingIdle >= 0 && now - idleStartedAt >= idleActions[playingIdle].duration()) {
             scheduleIdle(now);
         }
-        if (playingIdle < 0 && now >= nextIdleAt) {
+        long blinkElapsed = now - blinkStartedAt + Sequence.PAUSE;
+        if (blinkElapsed < blinking.duration()) {
+            return blinking.draw(canvas, destination, spritePaint, blinkElapsed);
+        }
+        if (reminder == null && playingIdle < 0 && now >= nextIdleAt) {
             int choices = previousIdle < 0 ? idleActions.length : idleActions.length - 1;
             int picked = ThreadLocalRandom.current().nextInt(choices);
             if (previousIdle >= 0 && picked >= previousIdle) {
@@ -176,8 +203,54 @@ final class CatView extends View {
         if (playingIdle >= 0) {
             return idleActions[playingIdle].draw(canvas, destination, spritePaint, now - idleStartedAt);
         }
+        if (now >= nextBlinkAt) {
+            blinkStartedAt = now;
+            nextBlinkAt = now + BLINK_INTERVAL;
+            return blinking.draw(canvas, destination, spritePaint, Sequence.PAUSE);
+        }
         blinking.drawFrame(canvas, destination, spritePaint, 0);
         return false;
+    }
+
+    private Frame[] loadFrames(int resource, int[] centers, int[] feet, int columns) {
+        return Frame.fromAtlas(BitmapFactory.decodeResource(getResources(), resource),
+            columns, centers, feet, spriteColor(resource));
+    }
+
+    // Match opaque helmet, muzzle, vest and fur samples to the neutral blink atlas.
+    private static ColorFilter spriteColor(int resource) {
+        switch (resource) {
+            case R.drawable.cat_wave_frames:
+                return tone(1.001f, 6.5f, 1.001f, 7.5f, 1.000f, 8.7f);
+            case R.drawable.cat_wave_inbetweens:
+                return tone(1.015f, 4.8f, 1.008f, 6.4f, 1.006f, 7.6f);
+            case R.drawable.cat_yawn_frames:
+                return tone(0.995f, 9.9f, 1.001f, 10.3f, 1.013f, 10.4f);
+            case R.drawable.cat_stretch_frames:
+                return tone(0.993f, 12.1f, 0.989f, 12.2f, 0.996f, 12.1f);
+            case R.drawable.cat_drink_frames:
+                return tone(0.975f, 12.3f, 0.978f, 11.9f, 0.980f, 11.8f);
+            case R.drawable.cat_flash_frames:
+                return tone(1.011f, 3.3f, 1.015f, 5.6f, 1.020f, 7.2f);
+            case R.drawable.cat_kick_frames:
+                return tone(0.984f, 1.9f, 0.984f, 4.6f, 0.993f, 5.9f);
+            case R.drawable.cat_shake_frames:
+                return tone(1.022f, -0.6f, 1.028f, 1.7f, 1.024f, 5.0f);
+            case R.drawable.cat_actions:
+                return tone(1.017f, 7.8f, 1.012f, 9.5f, 0.999f, 10.7f);
+            default:
+                return null;
+        }
+    }
+
+    private static ColorFilter tone(float red, float redOffset, float green, float greenOffset,
+                                    float blue, float blueOffset) {
+        return new ColorMatrixColorFilter(new float[]{
+            red, 0, 0, 0, redOffset,
+            0, green, 0, 0, greenOffset,
+            0, 0, blue, 0, blueOffset,
+            0, 0, 0, 1, 0
+        });
     }
 
     private void drawStars(Canvas canvas, float center, float top, float size, float hop) {
@@ -204,10 +277,6 @@ final class CatView extends View {
         private final long falling;
         private final int[] frameEnds;
         private final float[] slide;
-
-        Sequence(Bitmap atlas, int[] centers, int[] feet, long rising, long holding, long falling) {
-            this(Frame.fromAtlas(atlas, centers, feet), rising, holding, falling);
-        }
 
         Sequence(Frame[] frames, long rising, long holding, long falling) {
             this.frames = frames;
@@ -275,6 +344,7 @@ final class CatView extends View {
             aligned.set(destination);
             aligned.offset((tile / 2f - frame.center + shift) * scale, (tile * 0.95f - frame.feet) * scale);
             // Each cell is a complete pose. Register the helmet and feet before drawing it.
+            paint.setColorFilter(frame.color);
             canvas.drawBitmap(frame.atlas, frame.source, aligned, paint);
         }
 
@@ -293,19 +363,17 @@ final class CatView extends View {
         final Rect source;
         final int center;
         final int feet;
+        final ColorFilter color;
 
-        Frame(Bitmap atlas, Rect source, int center, int feet) {
+        Frame(Bitmap atlas, Rect source, int center, int feet, ColorFilter color) {
             this.atlas = atlas;
             this.source = source;
             this.center = center;
             this.feet = feet;
+            this.color = color;
         }
 
-        static Frame[] fromAtlas(Bitmap atlas, int[] centers, int[] feet) {
-            return fromAtlas(atlas, 3, centers, feet);
-        }
-
-        static Frame[] fromAtlas(Bitmap atlas, int columns, int[] centers, int[] feet) {
+        static Frame[] fromAtlas(Bitmap atlas, int columns, int[] centers, int[] feet, ColorFilter color) {
             int width = atlas.getWidth() / columns;
             int height = atlas.getHeight() / 2;
             Frame[] frames = new Frame[centers.length];
@@ -313,7 +381,7 @@ final class CatView extends View {
                 int x = index % columns * width;
                 int y = index / columns * height;
                 frames[index] = new Frame(atlas, new Rect(x, y, x + width, y + height),
-                    centers[index], feet[index]);
+                    centers[index], feet[index], color);
             }
             return frames;
         }

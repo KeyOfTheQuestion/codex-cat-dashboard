@@ -54,7 +54,7 @@ public final class MainActivity extends Activity {
     private static final int ORANGE = 0xffffca8e;
     private static final int LINE = 0xff39483d;
     private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm", Locale.CHINA);
-    private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("M月d日 EEE", Locale.CHINA);
+    private static final DateTimeFormatter HEADER_CLOCK = DateTimeFormatter.ofPattern("M月d日 EEE  HH:mm:ss", Locale.CHINA);
     private static final DateTimeFormatter RESET = DateTimeFormatter.ofPattern("M/d HH:mm", Locale.CHINA);
     private static final NumberFormat NUMBERS = NumberFormat.getNumberInstance(Locale.CHINA);
 
@@ -81,7 +81,8 @@ public final class MainActivity extends Activity {
         @Override
         public void run() {
             renderReminders();
-            handler.postDelayed(this, 1_000);
+            // Leave a small margin after the wall-clock boundary for uptime-based Handler scheduling.
+            handler.postDelayed(this, 1_015 - Math.floorMod(System.currentTimeMillis(), 1_000));
         }
     };
     private final Runnable poll = new Runnable() {
@@ -161,6 +162,7 @@ public final class MainActivity extends Activity {
         header.addView(label("Codex 用量", 22, TEXT, true),
             new LinearLayout.LayoutParams(0, -2, 1));
         clock = label("", 15, TEXT, true);
+        clock.setFontFeatureSettings("'tnum'");
         header.addView(clock);
         spacer(header, 12, 1);
         header.addView(button("用量连接", view -> showUsageSettings()));
@@ -271,7 +273,7 @@ public final class MainActivity extends Activity {
     private void renderReminders() {
         long now = System.currentTimeMillis();
         ZonedDateTime local = beijing(now);
-        clock.setText(DATE.format(local) + "  " + CLOCK.format(local));
+        clock.setText(HEADER_CLOCK.format(local));
         ReminderPlan.Status status = plan.status(now);
         ReminderPlan.Occurrence previous = currentReminder;
         currentReminder = status.due.isEmpty() ? null : status.due.get(0);
