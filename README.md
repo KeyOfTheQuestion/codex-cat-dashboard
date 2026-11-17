@@ -2,6 +2,22 @@
 
 红米上的 **橘猫看板**是原生 Android 应用，支持 Android 11 或更高版本。打开后进入反向横屏，前台显示时屏幕保持常亮。空闲时，橘猫会随机等 45–75 秒，再从挥爪、眨眼、打哈欠、闪身步、浪子踢球和狗熊哆嗦毛里选一个动作。三个舞步分别有八张完整姿势。点一下可以摸摸它。看板同时显示北京时间、Codex 用量和下一项提醒。
 
+## 界面截图
+
+![橘猫看板主界面，显示 Codex 今日 token 和两档剩余额度](docs/media/dashboard.png)
+
+| 自定义用量连接 | 喝水提醒 |
+| --- | --- |
+| ![在安卓端设置自定义服务地址](docs/media/connection.png) | ![橘猫举杯提示喝水](docs/media/water-reminder.png) |
+
+截图使用演示用量和示例服务地址。
+
+## 宠物动作
+
+| 闪身步 | 浪子踢球 | 狗熊哆嗦毛 |
+| --- | --- | --- |
+| ![橘猫左右侧闪](docs/media/flash-step.gif) | ![橘猫小跳踢腿](docs/media/kick.gif) | ![橘猫屈膝抖肩](docs/media/shoulder-shake.gif) |
+
 ## 开始使用
 
 1. 从 [GitHub Releases](https://github.com/KeyOfTheQuestion/codex-cat-dashboard/releases/latest) 下载 APK，安装到 Android 11 或更新版本的设备。
@@ -64,3 +80,5 @@ node server.mjs
 原生源码位于 `android/`。在 macOS 安装 JDK 21、Android SDK Platform 34 和 Build-Tools 34.0.0 后运行 **构建安卓.command** 可重新生成 APK。非默认 SDK 路径可用 `ANDROID_HOME` 指定。脚本使用当前电脑的本地签名密钥，自行构建的 APK 需要使用同一密钥才能覆盖安装。
 
 运行 `node --test` 可验证用量 HTTP 接口和本机用量统计。
+
+感谢 [LINUX DO](https://linux.do/) 为开源项目提供交流空间。
