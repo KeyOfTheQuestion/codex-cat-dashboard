@@ -6,10 +6,12 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { scanToday } from './usage.mjs';
+import { readWorkBuddyCredits } from './workbuddy.mjs';
 
 const port = Number(process.env.CODEX_DISPLAY_PORT ?? 8765);
 const host = process.env.CODEX_DISPLAY_HOST ?? '127.0.0.1';
 const accessToken = process.env.CODEX_DISPLAY_TOKEN ?? '';
+const workBuddyMode = process.env.CODEX_DISPLAY_WORKBUDDY;
 const loopbackHosts = ['127.0.0.1', '::1', 'localhost'];
 if (!loopbackHosts.includes(host) && !accessToken) {
   console.error('通过非回环地址提供用量时，请设置 CODEX_DISPLAY_TOKEN。');
@@ -92,6 +94,7 @@ let quota = null;
 let tokenUsage = null;
 let quotaError = false;
 let tokenError = false;
+let workBuddy;
 
 async function refreshQuota() {
   try {
@@ -127,6 +130,17 @@ async function refreshTokens() {
   setTimeout(refreshTokens, 5_000);
 }
 
+async function refreshWorkBuddy() {
+  try {
+    workBuddy = { ...await readWorkBuddyCredits(), updatedAt: Date.now(), stale: false };
+  } catch (error) {
+    if (workBuddy || workBuddyMode === '1' || error.code !== 'ENOENT') {
+      workBuddy = { ...workBuddy, stale: true };
+    }
+  }
+  setTimeout(refreshWorkBuddy, 60_000);
+}
+
 const server = createServer((req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -150,7 +164,7 @@ const server = createServer((req, res) => {
       return;
     }
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
-      .end(JSON.stringify({ quota, tokenUsage, quotaError, tokenError }));
+      .end(JSON.stringify({ quota, tokenUsage, quotaError, tokenError, workBuddy }));
   } else if (!local) {
     res.writeHead(403).end();
   } else if (req.method === 'GET' && req.url === '/') {
@@ -167,4 +181,7 @@ server.listen(port, host, () => {
   console.log(`Codex 用量看板 http://${urlHost}:${server.address().port}/`);
   void refreshQuota();
   void refreshTokens();
+  if (workBuddyMode === '1' || workBuddyMode === 'auto') {
+    void refreshWorkBuddy();
+  }
 });

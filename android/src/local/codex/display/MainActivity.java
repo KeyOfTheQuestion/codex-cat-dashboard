@@ -65,15 +65,21 @@ public final class MainActivity extends Activity {
     private UsageEndpoint usageEndpoint;
     private boolean foreground;
     private boolean fetching;
+    private TextView dashboardTitle;
     private TextView clock;
     private TextView connection;
     private TextView bubble;
     private LinearLayout speech;
     private Button acknowledge;
     private TextView tokens;
+    private TextView tokenLabel;
     private TextView tokenTime;
     private Quota fiveHours;
     private Quota weekly;
+    private LinearLayout workBuddyPanel;
+    private TextView workBuddyStatus;
+    private TextView workBuddyRemaining;
+    private TextView workBuddyUsed;
     private CatView cat;
     private ReminderPlan.Occurrence currentReminder;
 
@@ -159,8 +165,8 @@ public final class MainActivity extends Activity {
         });
 
         LinearLayout header = row();
-        header.addView(label("Codex 用量", 22, TEXT, true),
-            new LinearLayout.LayoutParams(0, -2, 1));
+        dashboardTitle = label("Codex 用量", 22, TEXT, true);
+        header.addView(dashboardTitle, new LinearLayout.LayoutParams(0, -2, 1));
         clock = label("", 15, TEXT, true);
         clock.setFontFeatureSettings("'tnum'");
         header.addView(clock);
@@ -218,7 +224,8 @@ public final class MainActivity extends Activity {
     private View metricsPanel() {
         LinearLayout column = vertical();
         LinearLayout top = tile(0xff213025);
-        top.addView(label("今日 token", 13, MUTED, true));
+        tokenLabel = label("今日 token", 13, MUTED, true);
+        top.addView(tokenLabel);
         tokens = label("—", 33, GREEN, true);
         tokens.setSingleLine();
         tokens.setAutoSizeTextTypeUniformWithConfiguration(18, 34, 1, android.util.TypedValue.COMPLEX_UNIT_SP);
@@ -235,7 +242,34 @@ public final class MainActivity extends Activity {
         spacer(limits, 8, 1);
         limits.addView(weekly.panel, new LinearLayout.LayoutParams(0, -1, 1));
         column.addView(limits, new LinearLayout.LayoutParams(-1, 0, 1));
+        workBuddyPanel = tile(0xff292a20);
+        LinearLayout workBuddyHeader = row();
+        workBuddyHeader.addView(label("WorkBuddy", 13, ORANGE, true),
+            new LinearLayout.LayoutParams(0, -2, 1));
+        workBuddyStatus = label("", 11, MUTED, false);
+        workBuddyHeader.addView(workBuddyStatus);
+        workBuddyPanel.addView(workBuddyHeader);
+        spacer(workBuddyPanel, 1, 4);
+        LinearLayout credits = row();
+        workBuddyRemaining = addCreditMetric(credits, "剩余积分", ORANGE);
+        workBuddyUsed = addCreditMetric(credits, "当前积分包已用", TEXT);
+        workBuddyPanel.addView(credits, -1, -2);
+        LinearLayout.LayoutParams workBuddyLayout = new LinearLayout.LayoutParams(-1, -2);
+        workBuddyLayout.topMargin = dp(8);
+        workBuddyPanel.setVisibility(View.GONE);
+        column.addView(workBuddyPanel, workBuddyLayout);
         return column;
+    }
+
+    private TextView addCreditMetric(LinearLayout row, String title, int color) {
+        LinearLayout metric = vertical();
+        metric.addView(label(title, 11, MUTED, false));
+        TextView value = label("—", 23, color, true);
+        value.setSingleLine();
+        value.setAutoSizeTextTypeUniformWithConfiguration(12, 23, 1, android.util.TypedValue.COMPLEX_UNIT_SP);
+        metric.addView(value, -1, dp(29));
+        row.addView(metric, new LinearLayout.LayoutParams(0, -2, 1));
+        return value;
     }
 
     private final class Quota {
@@ -399,6 +433,7 @@ public final class MainActivity extends Activity {
                 ? NUMBERS.format(tokenUsage.optLong("tokens")) : "—");
             tokensUpdated = tokenUsage.optLong("updatedAt");
         }
+        renderWorkBuddy(data.optJSONObject("workBuddy"));
         if (data.optBoolean("quotaError") || data.optBoolean("tokenError")) {
             connectionStatus("部分用量暂未更新 · 自动重试", ORANGE);
         } else if (quotaUpdated > 0 && tokensUpdated > 0) {
@@ -406,6 +441,29 @@ public final class MainActivity extends Activity {
                 + "   ·   额度 " + CLOCK.format(beijing(quotaUpdated)), MINT);
         } else {
             connectionStatus("正在读取 Codex 用量", MUTED);
+        }
+    }
+
+    private void renderWorkBuddy(JSONObject data) {
+        boolean visible = data != null;
+        workBuddyPanel.setVisibility(visible ? View.VISIBLE : View.GONE);
+        dashboardTitle.setText(visible ? "AI 用量" : "Codex 用量");
+        tokenLabel.setText(visible ? "Codex 今日 token" : "今日 token");
+        if (!visible) {
+            return;
+        }
+        double remaining = data.optDouble("remaining");
+        double used = data.optDouble("used");
+        workBuddyRemaining.setText(Double.isFinite(remaining) ? NUMBERS.format(remaining) : "—");
+        workBuddyUsed.setText(Double.isFinite(used) ? NUMBERS.format(used) : "—");
+        long updated = data.optLong("updatedAt");
+        boolean stale = data.optBoolean("stale");
+        workBuddyStatus.setTextColor(stale ? ORANGE : MUTED);
+        if (updated <= 0) {
+            workBuddyStatus.setText("等待 WorkBuddy 数据");
+        } else {
+            String time = CLOCK.format(beijing(updated));
+            workBuddyStatus.setText(stale ? "上次 " + time + " · 暂未更新" : time + " 更新");
         }
     }
 
@@ -453,6 +511,7 @@ public final class MainActivity extends Activity {
         tokens.setText("—");
         fiveHours.display(null);
         weekly.display(null);
+        renderWorkBuddy(null);
         connectionStatus("正在读取 Codex 用量", MUTED);
         if (foreground && !fetching) {
             fetchUsage();

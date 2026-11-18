@@ -25,7 +25,8 @@ if ! curl --fail --silent --max-time 1 "${url}api/usage" >/dev/null; then
   launchctl submit -l "$label" -o "${log_dir}codex-usage-display.log" \
     -e "${log_dir}codex-usage-display.err" -- \
     /usr/bin/env "PATH=$PATH" "CODEX_DISPLAY_CLI=$codex_bin" "CODEX_DISPLAY_PORT=$port" \
-    "CODEX_HOME=${CODEX_HOME:-$HOME/.codex}" "$node_bin" "$PWD/server.mjs"
+    "CODEX_HOME=${CODEX_HOME:-$HOME/.codex}" "CODEX_DISPLAY_WORKBUDDY=${CODEX_DISPLAY_WORKBUDDY:-auto}" \
+    "WORKBUDDY_CONFIG_DIR=${WORKBUDDY_CONFIG_DIR:-$HOME/.workbuddy}" "$node_bin" "$PWD/server.mjs"
 fi
 
 for attempt in {1..20}; do
@@ -65,6 +66,16 @@ if [[ -z "$serial" ]]; then
 fi
 
 adb -s "$serial" reverse "tcp:$port" "tcp:$port" >/dev/null
+adb_bin="$(command -v adb)"
+device_serial="$(adb -s "$serial" shell getprop ro.serialno | tr -d '\r' || true)"
+if [[ -n "$device_serial" ]]; then
+  watch_label="local.codex-usage-display-adb"
+  if launchctl list "$watch_label" >/dev/null 2>&1; then
+    launchctl remove "$watch_label"
+  fi
+  launchctl submit -l "$watch_label" -e "${log_dir}codex-usage-display-adb.err" -- \
+    "$node_bin" "$PWD/adb-reverse.mjs" "$adb_bin" "$serial" "$device_serial" "$port"
+fi
 if [[ "$use_web" == false ]] && adb -s "$serial" shell pm path local.codex.display | grep -q '^package:'; then
   adb -s "$serial" shell am start -n local.codex.display/.MainActivity
   echo "已打开红米上的橘猫看板。"
