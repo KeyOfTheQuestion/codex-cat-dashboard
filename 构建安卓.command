@@ -20,7 +20,7 @@ if [[ ! -x "$java_home/bin/javac" || ! -s "$d8_jar" ]]; then
   exit 1
 fi
 signing_dir="$HOME/Library/Application Support/Codex Display"
-artifact="$PWD/橘猫看板.apk"
+artifact="${CODEX_DISPLAY_APK:-$PWD/橘猫看板.apk}"
 
 mkdir -p "$tools" "$build/classes" "$build/dex"
 platform_jar="$sdk/platforms/android-34/android.jar"

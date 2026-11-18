@@ -2,8 +2,8 @@ import { execFile } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { promisify } from 'node:util';
 
-const [adb, initialTransport, deviceSerial, port] = process.argv.slice(2);
-const endpoint = `tcp:${port}`;
+const [adb, initialTransport, deviceSerial, ...ports] = process.argv.slice(2);
+const endpoints = ports.map(port => `tcp:${port}`);
 const exec = promisify(execFile);
 let preferredTransport = initialTransport;
 
@@ -35,11 +35,17 @@ async function restoreReverse() {
     }
     preferredTransport = transport;
     const mappings = await runAdb('-s', transport, 'reverse', '--list');
-    if (mappings !== null && !mappings.split('\n').some(line => {
-      const [, source, destination] = line.trim().split(/\s+/);
-      return source === endpoint && destination === endpoint;
-    })) {
-      await runAdb('-s', transport, 'reverse', endpoint, endpoint);
+    if (mappings !== null) {
+      const lines = mappings.split('\n');
+      for (const endpoint of endpoints) {
+        const hasMapping = lines.some(line => {
+          const [, source, destination] = line.trim().split(/\s+/);
+          return source === endpoint && destination === endpoint;
+        });
+        if (!hasMapping) {
+          await runAdb('-s', transport, 'reverse', endpoint, endpoint);
+        }
+      }
     }
     return;
   }

@@ -23,6 +23,7 @@ import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -41,6 +42,7 @@ import java.time.LocalTime;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -81,6 +83,10 @@ public final class MainActivity extends Activity {
     private TextView workBuddyRemaining;
     private TextView workBuddyUsed;
     private CatView cat;
+    private CatVisitView visitView;
+    private CatVisitLink visitLink;
+    private String visitRole;
+    private boolean nestOnLeft;
     private ReminderPlan.Occurrence currentReminder;
 
     private final Runnable clockTick = new Runnable() {
@@ -109,8 +115,16 @@ public final class MainActivity extends Activity {
         preferences = getSharedPreferences("dashboard", MODE_PRIVATE);
         usageEndpoint = UsageEndpoint.parse(preferences.getString("usage_address", ""), preferences.getString("usage_token", ""));
         plan = ReminderPlan.load(preferences.getString("reminders", null), System.currentTimeMillis());
+        visitRole = preferences.getString("cat_visit_role", "off");
+        nestOnLeft = preferences.getBoolean("cat_visit_nest_left", false);
+        String visitId = preferences.getString("cat_visit_id", "");
+        if (visitId.isEmpty()) {
+            visitId = UUID.randomUUID().toString().replace("-", "");
+            preferences.edit().putString("cat_visit_id", visitId).apply();
+        }
+        visitLink = new CatVisitLink(visitId, snapshot -> visitView.update(snapshot));
         savePlan();
-        setContentView(dashboard());
+        displayScreen();
         hideBars();
     }
 
@@ -118,8 +132,7 @@ public final class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         foreground = true;
-        handler.post(clockTick);
-        handler.post(poll);
+        resumeScreen();
         hideBars();
     }
 
@@ -128,11 +141,13 @@ public final class MainActivity extends Activity {
         foreground = false;
         handler.removeCallbacks(clockTick);
         handler.removeCallbacks(poll);
+        visitLink.stop();
         super.onPause();
     }
 
     @Override
     protected void onDestroy() {
+        visitLink.close();
         network.shutdownNow();
         super.onDestroy();
     }
@@ -153,6 +168,71 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void resumeScreen() {
+        handler.removeCallbacks(clockTick);
+        handler.removeCallbacks(poll);
+        if (!visitRole.equals("nest")) {
+            handler.post(clockTick);
+            handler.post(poll);
+        }
+        if (!visitRole.equals("off")) {
+            visitView.prepareSprites();
+            visitLink.start(visitRole, nestOnLeft);
+        } else {
+            visitView.update(new CatVisitLink.State(false));
+        }
+    }
+
+    private void displayScreen() {
+        FrameLayout screen = new FrameLayout(this);
+        if (visitRole.equals("nest")) {
+            visitView = new CatVisitView(this, null);
+            visitView.setOnClickListener(view -> {
+                visitView.touchPillow();
+                visitLink.call();
+            });
+            screen.addView(visitView, new FrameLayout.LayoutParams(-1, -1));
+            Button settings = button("串门设置", view -> showVisitSettings());
+            FrameLayout.LayoutParams corner = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
+            corner.setMargins(dp(16), dp(13), dp(17), 0);
+            screen.addView(settings, corner);
+            screen.setOnApplyWindowInsetsListener((view, insets) -> {
+                Insets cutout = insets.getInsetsIgnoringVisibility(WindowInsets.Type.displayCutout());
+                corner.topMargin = Math.max(dp(13), cutout.top);
+                corner.rightMargin = Math.max(dp(17), cutout.right);
+                settings.setLayoutParams(corner);
+                return insets;
+            });
+        } else {
+            screen.addView(dashboard(), new FrameLayout.LayoutParams(-1, -1));
+            visitView = new CatVisitView(this, cat);
+            screen.addView(visitView, new FrameLayout.LayoutParams(-1, -1));
+        }
+        setContentView(screen);
+    }
+
+    private void showVisitSettings() {
+        int selected = visitRole.equals("nest") ? 3 : visitRole.equals("home") ? (nestOnLeft ? 2 : 1) : 0;
+        String[] modes = {"单屏用量看板", "用量看板 · 小窝在右", "用量看板 · 小窝在左", "小窝"};
+        new AlertDialog.Builder(this).setTitle("双屏串门")
+            .setSingleChoiceItems(modes, selected, (dialog, choice) -> {
+                dialog.dismiss();
+                boolean wasNest = visitRole.equals("nest");
+                visitRole = choice == 3 ? "nest" : choice == 0 ? "off" : "home";
+                nestOnLeft = choice == 2;
+                preferences.edit().putString("cat_visit_role", visitRole)
+                    .putBoolean("cat_visit_nest_left", nestOnLeft).apply();
+                visitLink.stop();
+                if (wasNest != visitRole.equals("nest")) {
+                    displayScreen();
+                    hideBars();
+                }
+                if (foreground) {
+                    resumeScreen();
+                }
+            }).setNegativeButton("取消", null).show();
+    }
+
     private View dashboard() {
         LinearLayout root = vertical();
         root.setBackgroundColor(BACKGROUND);
@@ -171,6 +251,8 @@ public final class MainActivity extends Activity {
         clock.setFontFeatureSettings("'tnum'");
         header.addView(clock);
         spacer(header, 12, 1);
+        header.addView(button("串门", view -> showVisitSettings()));
+        spacer(header, 8, 1);
         header.addView(button("用量连接", view -> showUsageSettings()));
         spacer(header, 8, 1);
         header.addView(button("提醒设置", view -> showSettings()));
