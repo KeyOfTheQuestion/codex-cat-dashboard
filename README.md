@@ -93,7 +93,6 @@ Mac 上运行并登录腾讯 WorkBuddy 后，**启动看板.command** 会尝试�
 
 运行 `node --test` 可验证用量 HTTP 接口和本机用量统计。
 
-感谢 [LINUX DO](https://linux.do/) 为开源项目提供交流空间。
 
 ## 双屏橘猫串门
 
