@@ -3,6 +3,7 @@ package local.codex.display;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.BlendMode;
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
 import android.graphics.ColorMatrixColorFilter;
@@ -19,11 +20,14 @@ final class CatView extends View {
     private static final long BLINK_INTERVAL = 6_000;
     private static final long MIN_IDLE_GAP = 45_000;
     private static final long MAX_IDLE_GAP = 75_000;
+    private static final long POSE_FADE = 155;
+    private static final long YAWN_GAP = 200;
 
     private final Bitmap cheer;
     private final ColorFilter cheerColor;
     private final Sequence drinking;
     private final Sequence stretching;
+    private final Sequence yawning;
     private final Sequence waving;
     private final Sequence blinking;
     private final Sequence[] idleActions;
@@ -32,6 +36,7 @@ final class CatView extends View {
     private final Paint accentPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private ReminderPlan.Kind reminder;
     private long reminderStartedAt;
+    private long reminderUntil;
     private long cheerStartedAt = -10_000;
     private long nextIdleAt;
     private long nextBlinkAt;
@@ -66,7 +71,7 @@ final class CatView extends View {
         blinking = new Sequence(loadFrames(R.drawable.cat_blink_frames,
             new int[]{257, 257, 257, 257, 257, 257}, new int[]{480, 479, 479, 479, 479, 480}, 3),
             150, 110, 190);
-        Sequence yawning = new Sequence(loadFrames(R.drawable.cat_yawn_frames,
+        yawning = new Sequence(loadFrames(R.drawable.cat_yawn_frames,
             new int[]{260, 260, 260, 260, 260, 260}, new int[]{483, 483, 483, 483, 483, 483}, 3),
             680, 540, 690);
         Sequence flashing = new Sequence(loadFrames(R.drawable.cat_flash_frames,
@@ -98,10 +103,12 @@ final class CatView extends View {
         });
     }
 
-    void setReminder(ReminderPlan.Kind kind, boolean newReminder) {
+    void setReminder(ReminderPlan.Kind kind, boolean newReminder, long playbackLeft) {
+        long now = SystemClock.uptimeMillis();
+        reminderUntil = now + playbackLeft;
         if (reminder != kind || newReminder) {
             reminder = kind;
-            startReminder(SystemClock.uptimeMillis());
+            startReminder(now);
         }
     }
 
@@ -110,10 +117,17 @@ final class CatView extends View {
         startReminder(cheerStartedAt + CHEER_TIME);
     }
 
+    @Override
+    protected void onVisibilityChanged(View changedView, int visibility) {
+        super.onVisibilityChanged(changedView, visibility);
+        if (visibility == VISIBLE && reminder != null && SystemClock.uptimeMillis() < reminderUntil) {
+            startReminder(Math.max(SystemClock.uptimeMillis(), cheerStartedAt + CHEER_TIME));
+        }
+    }
+
     private void startReminder(long start) {
         reminderStartedAt = start;
-        Sequence sequence = reminderSequence();
-        scheduleIdle(sequence == null ? start : start + sequence.duration());
+        scheduleIdle(start);
         invalidate();
     }
 
@@ -137,8 +151,11 @@ final class CatView extends View {
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         long now = SystemClock.uptimeMillis();
+        if (reminder != null && now >= reminderUntil) {
+            reminder = null;
+            scheduleIdle(now);
+        }
         long sinceCheer = now - cheerStartedAt;
-        long sinceReminder = Math.max(0, now - reminderStartedAt);
         boolean celebrating = sinceCheer < CHEER_TIME;
         float hop = celebrating ? (float) Math.sin(Math.PI * sinceCheer / CHEER_TIME) : 0;
         float size = Math.min(getWidth(), getHeight() * 0.91f);
@@ -154,14 +171,16 @@ final class CatView extends View {
             center + shadow, ground + size * 0.024f, accentPaint);
         destination.set(center - size / 2, top + offset, center + size / 2, top + offset + size);
 
-        Sequence reminderAnimation = reminderSequence();
-        boolean moving = celebrating;
+        boolean moving;
         if (celebrating) {
+            int layer = startPoseFade(canvas, poseBlend(sinceCheer, CHEER_TIME));
             spritePaint.setColorFilter(cheerColor);
             canvas.drawBitmap(cheer, null, destination, spritePaint);
+            endPoseFade(canvas, layer);
             drawStars(canvas, center, top, size, hop);
-        } else if (reminderAnimation != null && sinceReminder < reminderAnimation.duration()) {
-            moving = reminderAnimation.draw(canvas, destination, spritePaint, sinceReminder);
+            moving = true;
+        } else if (reminder != null) {
+            moving = drawReminder(canvas, now);
         } else {
             moving = drawIdle(canvas, now);
         }
@@ -173,6 +192,58 @@ final class CatView extends View {
                 postInvalidateDelayed(65);
             }
         }
+    }
+
+    private boolean drawReminder(Canvas canvas, long now) {
+        Sequence action = reminderSequence();
+        boolean withYawn = reminder == ReminderPlan.Kind.STRETCH;
+        long yawnAt = action.duration() + YAWN_GAP;
+        long duration = withYawn ? yawnAt + yawning.duration() : action.duration();
+        long phase = ReminderPlayback.phase(now - reminderStartedAt, duration);
+        float timeLeft = smooth((reminderUntil - now) / (float) POSE_FADE);
+        if (phase < action.duration()) {
+            return drawAction(canvas, action, phase, timeLeft);
+        }
+        if (withYawn && phase >= yawnAt && phase < duration) {
+            return drawAction(canvas, yawning, phase - yawnAt, timeLeft);
+        }
+        return drawIdle(canvas, now);
+    }
+
+    private boolean drawAction(Canvas canvas, Sequence action, long elapsed, float visibility) {
+        int layer = startPoseFade(canvas, Math.min(visibility, poseBlend(elapsed, action.duration())));
+        boolean moving = action.draw(canvas, destination, spritePaint, elapsed);
+        endPoseFade(canvas, layer);
+        return moving || layer >= 0;
+    }
+
+    private int startPoseFade(Canvas canvas, float weight) {
+        if (weight >= 1) {
+            return -1;
+        }
+        int layer = canvas.saveLayer(null, null);
+        spritePaint.setAlpha(Math.round(255 * (1 - weight)));
+        blinking.drawFrame(canvas, destination, spritePaint, 0);
+        spritePaint.setAlpha(Math.round(255 * weight));
+        spritePaint.setBlendMode(BlendMode.PLUS);
+        return layer;
+    }
+
+    private void endPoseFade(Canvas canvas, int layer) {
+        if (layer >= 0) {
+            canvas.restoreToCount(layer);
+            spritePaint.setBlendMode(null);
+            spritePaint.setAlpha(255);
+        }
+    }
+
+    private static float poseBlend(long elapsed, long duration) {
+        return smooth(Math.min(elapsed, duration - elapsed) / (float) POSE_FADE);
+    }
+
+    private static float smooth(float value) {
+        float t = Math.max(0, Math.min(1, value));
+        return t * t * (3 - 2 * t);
     }
 
     private void scheduleIdle(long after) {
@@ -201,7 +272,7 @@ final class CatView extends View {
             idleStartedAt = now;
         }
         if (playingIdle >= 0) {
-            return idleActions[playingIdle].draw(canvas, destination, spritePaint, now - idleStartedAt);
+            return drawAction(canvas, idleActions[playingIdle], now - idleStartedAt, 1);
         }
         if (now >= nextBlinkAt) {
             blinkStartedAt = now;
@@ -213,8 +284,73 @@ final class CatView extends View {
     }
 
     private Frame[] loadFrames(int resource, int[] centers, int[] feet, int columns) {
-        return Frame.fromAtlas(BitmapFactory.decodeResource(getResources(), resource),
-            columns, centers, feet, spriteColor(resource));
+        int helmetLift;
+        switch (resource) {
+            case R.drawable.cat_drink_frames:
+                helmetLift = 35;
+                break;
+            case R.drawable.cat_stretch_frames:
+                helmetLift = 23;
+                break;
+            case R.drawable.cat_yawn_frames:
+                helmetLift = 20;
+                break;
+            case R.drawable.cat_wave_frames:
+                helmetLift = 16;
+                break;
+            case R.drawable.cat_wave_inbetweens:
+                helmetLift = 12;
+                break;
+            default:
+                helmetLift = 0;
+                break;
+        }
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inMutable = helmetLift > 0;
+        Bitmap atlas = BitmapFactory.decodeResource(getResources(), resource, options);
+        Frame[] frames = Frame.fromAtlas(atlas, columns, centers, feet, spriteColor(resource));
+        if (helmetLift > 0) {
+            for (Frame frame : frames) {
+                matchHelmet(frame, helmetLift);
+            }
+        }
+        return frames;
+    }
+
+    // Lift the gray crown to the neutral pose while leaving the amber fur and deep seams intact.
+    private static void matchHelmet(Frame frame, int lift) {
+        Rect cell = frame.source;
+        int tile = cell.width();
+        int center = cell.left + frame.center;
+        int floor = cell.top + frame.feet;
+        int left = Math.max(cell.left, center - Math.round(tile * 0.23f));
+        int right = Math.min(cell.right, center + Math.round(tile * 0.23f));
+        int top = Math.max(cell.top, floor - Math.round(tile * 0.95f));
+        int bottom = floor - Math.round(tile * 0.56f);
+        int[] row = new int[right - left];
+        for (int y = top; y < bottom; y++) {
+            float height = (floor - y) / (float) tile;
+            float crown = smooth((height - 0.56f) / 0.20f);
+            frame.atlas.getPixels(row, 0, row.length, left, y, row.length, 1);
+            for (int x = 0; x < row.length; x++) {
+                int pixel = row[x];
+                int alpha = pixel >>> 24;
+                if (alpha < 168) {
+                    continue;
+                }
+                int red = pixel >> 16 & 255;
+                int green = pixel >> 8 & 255;
+                int blue = pixel & 255;
+                int spread = Math.max(red, Math.max(green, blue)) - Math.min(red, Math.min(green, blue));
+                float gray = 1 - smooth((spread - 8) / 27f);
+                float light = smooth(green / 58f) * (1 - smooth((green - 126) / 95f));
+                float edge = smooth((alpha - 168) / 72f);
+                int bump = Math.round(lift * crown * gray * light * edge);
+                row[x] = alpha << 24 | Math.min(255, red + bump) << 16
+                    | Math.min(255, green + bump) << 8 | Math.min(255, blue + bump);
+            }
+            frame.atlas.setPixels(row, 0, row.length, left, y, row.length, 1);
+        }
     }
 
     // Match opaque helmet, muzzle, vest and fur samples to the neutral blink atlas.

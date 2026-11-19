@@ -221,6 +221,15 @@ final class ReminderPlan {
         final List<Occurrence> due = new ArrayList<>();
         Occurrence next;
 
+        Occurrence forDisplay(long now) {
+            for (Occurrence item : due) {
+                if (ReminderPlayback.active(item.at, now)) {
+                    return item;
+                }
+            }
+            return due.isEmpty() ? null : due.get(0);
+        }
+
         void offer(Occurrence item) {
             if (next == null || item.at < next.at) {
                 next = item;

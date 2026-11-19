@@ -392,10 +392,12 @@ public final class MainActivity extends Activity {
         clock.setText(HEADER_CLOCK.format(local));
         ReminderPlan.Status status = plan.status(now);
         ReminderPlan.Occurrence previous = currentReminder;
-        currentReminder = status.due.isEmpty() ? null : status.due.get(0);
+        currentReminder = status.forDisplay(now);
         boolean due = currentReminder != null;
         boolean newReminder = due && !currentReminder.isSameAs(previous);
-        cat.setReminder(due ? currentReminder.kind : null, newReminder);
+        long playbackLeft = due ? ReminderPlayback.remaining(currentReminder.at, now) : 0;
+        visitLink.holdAtHome(playbackLeft > 0);
+        cat.setReminder(playbackLeft > 0 ? currentReminder.kind : null, newReminder, playbackLeft);
         if (due != (previous != null)) {
             speech.setBackground(due ? rounded(0xff503324, 0xffd69761, 8)
                 : rounded(0xff3a3024, 0xff634536, 8));

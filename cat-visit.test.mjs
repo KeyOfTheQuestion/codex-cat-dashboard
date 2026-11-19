@@ -10,7 +10,7 @@ function fixture(roll) {
   const visit = createVisit({ now: () => time, random: () => roll });
   return {
     advance: ms => { time += ms; },
-    home: (side = 'right') => visit.exchange('home', home, { side }),
+    home: (side = 'right', hold = false) => visit.exchange('home', home, { side, hold }),
     nest: (call = false) => visit.exchange('nest', nest, { call }),
     visit,
   };
@@ -100,4 +100,34 @@ test('两端提前收到同一行程，跨屏空白小于 150 毫秒', () => {
   f.advance(160);
   assert.equal(f.home('left').trip.id, first.id);
   assert.equal(f.nest(true).trip.elapsed, first.elapsed + 160);
+});
+
+test('喝水提醒期间橘猫留在看板，确认后可再次串门', () => {
+  const f = fixture(0.5);
+  f.home();
+  assert.equal(f.nest(true).trip.from, 'home');
+  assert.equal(f.home('right', true).trip, null);
+  for (let i = 0; i < 60; i++) {
+    f.advance(1_000);
+    f.home('right', true);
+    assert.equal(f.nest(true).trip, null);
+  }
+  assert.equal(f.home().trip, null);
+  assert.equal(f.nest(true).trip.from, 'home');
+});
+
+test('喝水提醒等出发动画结束再把橘猫叫回，不中断两屏行程', () => {
+  const f = fixture(0.5);
+  f.home();
+  const outward = f.nest(true).trip;
+  f.advance(500);
+  assert.equal(f.home('right', true).trip.id, outward.id);
+  f.advance(1_600);
+  const returnLeg = f.home('right', true);
+  assert.equal(returnLeg.location, 'nest');
+  assert.equal(returnLeg.trip.from, 'nest');
+  assert.equal(f.nest().trip.id, returnLeg.trip.id);
+  f.advance(2_100);
+  assert.equal(f.home('right', true).location, 'home');
+  assert.equal(f.nest(true).trip, null);
 });

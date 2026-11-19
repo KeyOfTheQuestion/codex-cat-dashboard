@@ -98,6 +98,7 @@ final class CatVisitLink {
     private ScheduledFuture<?> running;
     private int generation;
     private State last = new State(false);
+    private volatile boolean holdAtHome;
 
     CatVisitLink(String id, Consumer<State> listener) {
         this.id = id;
@@ -131,12 +132,17 @@ final class CatVisitLink {
         callUntil.set(SystemClock.uptimeMillis() + 3_500);
     }
 
+    void holdAtHome(boolean hold) {
+        holdAtHome = hold;
+    }
+
     private void request(int session, String role, boolean nestOnLeft) {
         long started = SystemClock.uptimeMillis();
         long requested = callUntil.get();
         boolean calling = role.equals("nest") && requested > started;
         String address = ENDPOINT + "?role=" + role + "&id=" + id
-            + "&side=" + (nestOnLeft ? "left" : "right") + (calling ? "&call=1" : "");
+            + "&side=" + (nestOnLeft ? "left" : "right") + (calling ? "&call=1" : "")
+            + (role.equals("home") && holdAtHome ? "&hold=1" : "");
         State received;
         try {
             received = exchange(address, started);

@@ -41,7 +41,7 @@ label="local.codex-cat-visit"
 logs="$(getconf DARWIN_USER_TEMP_DIR)"
 
 relay_healthy() {
-  [[ "$(curl --fail --silent --max-time 1 "$health")" == "cat-visit-v2" ]]
+  [[ "$(curl --fail --silent --max-time 1 "$health")" == "cat-visit-v3" ]]
 }
 
 if ! relay_healthy; then

@@ -16,7 +16,7 @@ createServer((request, response) => {
   }
   const url = new URL(`http://127.0.0.1:${port}${request.url}`);
   if (request.method === 'GET' && url.pathname === '/health') {
-    response.writeHead(200).end('cat-visit-v2');
+    response.writeHead(200).end('cat-visit-v3');
     return;
   }
   if (request.method !== 'POST' || url.pathname !== '/api/cat-visit') {
@@ -37,6 +37,7 @@ createServer((request, response) => {
   const result = visit.exchange(role, id, {
     side: url.searchParams.get('side') === 'left' ? 'left' : 'right',
     call: url.searchParams.get('call') === '1',
+    hold: url.searchParams.get('hold') === '1',
   });
   if (!result) {
     response.writeHead(409).end();
