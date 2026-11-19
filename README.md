@@ -1,16 +1,20 @@
 # 橘猫看板
 
- **橘猫看板**是原生 Android 应用，支持 Android 11 或更高版本。打开后进入反向横屏，前台显示时屏幕保持常亮。空闲时，橘猫每 6 秒眨一次眼，每隔 45–75 秒随机挥爪、打哈欠或跳一段舞步。三个舞步分别有八张完整姿势。点一下可以摸摸它。看板同时显示精确到秒的北京时间、Codex 用量和下一项提醒。
+**橘猫看板**把闲置的 Android 手机变成一块横屏常亮的 AI 用量屏，显示 Codex 今日 token、5 小时和每周剩余额度，以及 WorkBuddy 积分。桌面橘猫会举杯提醒喝水，伸懒腰后打哈欠，也能在看板和另一台手机的小窝之间串门。支持 Android 11 及以上。
 
 ## 界面截图
 
-![橘猫看板主界面，显示 Codex 今日 token 和两档剩余额度](docs/media/dashboard.png)
+![橘猫看板 1.13.3 主界面，显示 Codex 今日 token、两档剩余额度和 WorkBuddy 积分](docs/media/dashboard.png)
 
-| 自定义用量连接 | 喝水提醒 |
+| 喝水提醒 | 拉伸提醒 |
 | --- | --- |
-| ![在安卓端设置自定义服务地址](docs/media/connection.png) | ![橘猫举杯提示喝水](docs/media/water-reminder.png) |
+| ![橘猫举杯提示喝水](docs/media/water-reminder.png) | ![橘猫抬起前爪伸懒腰](docs/media/stretch-reminder.png) |
 
-截图使用演示用量和示例服务地址。
+| 双屏串门小窝 | 自定义用量连接 |
+| --- | --- |
+| ![橘猫串门后在小窝枕头上打盹](docs/media/cat-nest.png) | ![在安卓端设置示例用量服务地址](docs/media/connection.png) |
+
+截图来自 1.13.3 的演示界面，用量、额度、积分和服务地址均为示例。
 
 ## 宠物动作
 
